@@ -1,88 +1,63 @@
 # LLM Tracking the Log
 
-Ultra-simple MacBook activity monitoring using **Watchdog** (files) and **AppKit** (apps).
+Monitor code changes with AI analysis and security risk classification.
 
-## What It Does
+## Features
 
-**Watchdog monitors files:**
-- Documents, Desktop, Downloads folders
-- Programming files (.py, .js, .ts, .java, etc.)
-- Captures full file content in real-time
+- 📁 **File Monitoring**: Watches for code file changes (`.py`, `.js`, `.ts`, etc.)
+- 🤖 **LLM Analysis**: Analyzes code reasoning with local LLM
+- 🔴 **Risk Classification**: Classifies security risk levels (Critical/High/Medium/Low)
+- 🖥️ **App Monitoring**: Tracks application switches
 
-**AppKit monitors apps:**
-- Detects active application switches
-- Logs app name, bundle ID, and path
-
-## Quick Start
+## Installation
 
 ```bash
-# Install dependencies
-pip install watchdog pyobjc-framework-Cocoa
-
-# Start monitoring
-./start.sh
+pip install -e .
 ```
 
-That's it! Events are logged in real-time to `logs/` folder.
+## Usage
 
-## File Structure
-
-```
-LLM_tracking_the_log/
-├── monitor.py        ← Main monitoring script
-├── start.sh         ← Start script
-├── watchdog_demo.py ← Educational demo
-├── logs/
-│   ├── files.log    ← File events with content
-│   └── apps.log     ← App switch events
-└── test/            ← Test files
-```
-
-## Output Examples
-
-**File Created:**
-```json
-{
-  "event": "file_event",
-  "data": {
-    "type": "created",
-    "path": "/Users/.../script.py",
-    "content": "print('hello')\n",
-    "timestamp": "2026-02-11T..."
-  }
-}
-```
-
-**App Switch:**
-```json
-{
-  "event": "app_event",
-  "data": {
-    "type": "switch",
-    "name": "Chrome",
-    "bundle_id": "com.google.Chrome",
-    "timestamp": "2026-02-11T..."
-  }
-}
-```
-
-## Learn Watchdog
-
-Run the educational demo with detailed explanations:
 ```bash
-python3 watchdog_demo.py test/
+# Monitor default folders (Documents, Desktop, Downloads)
+llm-monitor
+
+# Monitor specific folder
+llm-monitor ~/Projects
+
+# Monitor multiple folders
+llm-monitor ~/Projects ~/Work ~/Code
 ```
 
-## Configuration
+## Requirements
 
-Edit `monitor.py` to customize:
-- **Watch paths**: Line ~245 - `watch_paths` list
-- **File extensions**: Line ~20 - `PROGRAMMING_EXTENSIONS`
-- **Skip directories**: Line ~28 - `SKIP_DIRS`
-- **App check interval**: Line ~197 - `check_interval`
+- macOS 10.13+
+- Python 3.8+
+- Local LLM server at `http://127.0.0.1:1234`
 
-## Privacy
+## Logs
 
-- All data stays local
-- No network transmission
-- Logs in `logs/` directory only
+All logs are stored in `~/.llm-tracking-log/logs/`:
+- `files.log` - File change events
+- `apps.log` - Application switches
+- `llm_analysis.log` - LLM analysis with risk classifications
+
+## View Risk Analysis
+
+```bash
+# Show risk classifications with colors
+python3 << 'EOF'
+import json
+with open('/Users/hoangle/.llm-tracking-log/logs/llm_analysis.log') as f:
+    for line in f:
+        data = json.loads(line)
+        if 'risk_classification' in data:
+            risk = data['risk_classification']
+            print(f"{risk['risk_level']:8s} {risk['confidence']:.1%} - {data['event']['data']['path'].split('/')[-1]}")
+EOF
+```
+
+## Stop Monitor
+
+```bash
+pkill -f llm-monitor
+```

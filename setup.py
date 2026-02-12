@@ -18,15 +18,17 @@ setup(
     author_email='your.email@example.com',
     url='https://github.com/yourusername/llm-tracking-log',
     packages=find_packages(),
-    py_modules=['monitor', 'watchdog_demo'],
+    py_modules=['monitor', 'llm_client', 'risk_classifier'],
     install_requires=[
         'watchdog>=3.0.0',
         'pyobjc-framework-Cocoa>=9.0',
+        'requests>=2.31.0',
+        'torch>=2.0.0',
+        'transformers>=4.30.0',
     ],
     entry_points={
         'console_scripts': [
             'llm-monitor=monitor:main',
-            'llm-watchdog-demo=watchdog_demo:monitor_directory',
         ],
     },
     classifiers=[

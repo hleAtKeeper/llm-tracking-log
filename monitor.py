@@ -27,7 +27,12 @@ except ImportError:
     print('Install: pip install pyobjc-framework-Cocoa')
     sys.exit(1)
 
-# No external dependencies - just Watchdog and AppKit!
+# Import LLM client for analysis
+try:
+    from llm_client import LLMClient
+except ImportError:
+    print('Warning: LLM client not available')
+    LLMClient = None
 
 
 # Programming file extensions
@@ -39,15 +44,17 @@ PROGRAMMING_EXTENSIONS = {
 }
 
 SKIP_DIRS = {'__pycache__', '.git', 'node_modules', 'venv', '.venv', 'logs', 'pids'}
+MIN_FILE_SIZE = 10  # Skip files smaller than 10 bytes
 MAX_FILE_SIZE = 1024 * 1024  # 1MB
 
 
 class FileMonitor(FileSystemEventHandler):
     """Monitor file system changes using Watchdog."""
 
-    def __init__(self, log_file: Path):
+    def __init__(self, log_file: Path, llm_client=None):
         self.log_file = log_file
         self.log_handle = open(log_file, 'a')
+        self.llm_client = llm_client
         print('[FILE MONITOR] Initialized')
 
     def is_programming_file(self, path: str) -> bool:
@@ -78,6 +85,10 @@ class FileMonitor(FileSystemEventHandler):
 
         print(f'[FILE] {event_type}: {Path(path).name}')
 
+        # Send to LLM for analysis
+        if self.llm_client:
+            self.llm_client.analyze_event(log_entry)
+
     def on_created(self, event):
         """Handle file creation."""
         if event.is_directory or self.should_skip(event.src_path):
@@ -89,7 +100,14 @@ class FileMonitor(FileSystemEventHandler):
             try:
                 # Read content
                 file_path = Path(event.src_path)
-                if file_path.stat().st_size <= MAX_FILE_SIZE:
+                file_size = file_path.stat().st_size
+
+                # Skip very small or very large files
+                if file_size < MIN_FILE_SIZE:
+                    print(f'   Skipped: file too small ({file_size} bytes)')
+                    return
+
+                if file_size <= MAX_FILE_SIZE:
                     content = file_path.read_text(encoding='utf-8', errors='ignore')
                     self.log_event('created', event.src_path, content=content)
                     print(f'   Size: {len(content)} bytes')
@@ -107,7 +125,14 @@ class FileMonitor(FileSystemEventHandler):
 
             try:
                 file_path = Path(event.src_path)
-                if file_path.stat().st_size <= MAX_FILE_SIZE:
+                file_size = file_path.stat().st_size
+
+                # Skip very small or very large files
+                if file_size < MIN_FILE_SIZE:
+                    print(f'   Skipped: file too small ({file_size} bytes)')
+                    return
+
+                if file_size <= MAX_FILE_SIZE:
                     content = file_path.read_text(encoding='utf-8', errors='ignore')
                     self.log_event('modified', event.src_path, content=content)
                     print(f'   Size: {len(content)} bytes')
@@ -129,11 +154,12 @@ class FileMonitor(FileSystemEventHandler):
 class AppMonitor:
     """Monitor application switches using AppKit."""
 
-    def __init__(self, log_file: Path, check_interval: float = 2.0):
+    def __init__(self, log_file: Path, check_interval: float = 2.0, llm_client=None):
         self.log_file = log_file
         self.log_handle = open(log_file, 'a')
         self.check_interval = check_interval
         self.last_app = None
+        self.llm_client = llm_client
         print('[APP MONITOR] Initialized')
 
     def get_active_app(self):
@@ -161,6 +187,10 @@ class AppMonitor:
         self.log_handle.flush()
 
         print(f'[APP] {event_type}: {app_data["name"]}')
+
+        # Send to LLM for analysis
+        if self.llm_client:
+            self.llm_client.analyze_event(log_entry)
 
     def monitor(self):
         """Monitor app switches."""
@@ -192,22 +222,46 @@ class AppMonitor:
 def main():
     """Start monitoring system."""
     import sys
+    import argparse
 
     # Parse arguments
-    if len(sys.argv) > 1 and sys.argv[1] in ['--help', '-h']:
-        print('LLM Tracking the Log - Monitor MacBook activity')
-        print()
-        print('Usage:')
-        print('  llm-monitor              Start monitoring')
-        print('  llm-monitor --help       Show this help')
-        print()
-        print('Monitors:')
-        print('  - Documents, Desktop, Downloads folders')
-        print('  - Programming files (.py, .js, .ts, etc.)')
-        print('  - Application switches')
-        print()
-        print('Logs stored in: ~/.llm-tracking-log/logs/')
-        return
+    parser = argparse.ArgumentParser(
+        description='LLM Tracking the Log - Monitor code changes with AI analysis',
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""
+Examples:
+  llm-monitor                                    # Monitor default folders
+  llm-monitor ~/Projects                         # Monitor single custom folder
+  llm-monitor ~/Projects ~/Work ~/Code           # Monitor multiple folders
+  llm-monitor --path ~/Projects --path ~/Work    # Alternative syntax
+
+Logs stored in: ~/.llm-tracking-log/logs/
+        """
+    )
+    parser.add_argument(
+        'paths',
+        nargs='*',
+        help='Paths to monitor (default: Documents, Desktop, Downloads)'
+    )
+    parser.add_argument(
+        '--path',
+        action='append',
+        dest='extra_paths',
+        help='Additional path to monitor (can be used multiple times)'
+    )
+
+    args = parser.parse_args()
+
+    # Collect all paths
+    custom_paths = []
+    if args.paths:
+        custom_paths.extend(args.paths)
+    if args.extra_paths:
+        custom_paths.extend(args.extra_paths)
+
+    # Expand user paths (~/...)
+    if custom_paths:
+        custom_paths = [str(Path(p).expanduser().resolve()) for p in custom_paths]
 
     print('=' * 80)
     print('UNIFIED MONITORING SYSTEM')
@@ -221,20 +275,39 @@ def main():
     file_log = log_dir / 'files.log'
     app_log = log_dir / 'apps.log'
 
-    # Watch paths
-    watch_paths = [
-        str(Path.home() / 'Documents'),
-        str(Path.home() / 'Desktop'),
-        str(Path.home() / 'Downloads'),
-    ]
+    # Watch paths - use custom paths or defaults
+    if custom_paths:
+        watch_paths = custom_paths
+        print(f'\n[SETUP] Custom monitoring paths: {len(watch_paths)} folder(s)')
+    else:
+        watch_paths = [
+            str(Path.home() / 'Documents'),
+            str(Path.home() / 'Desktop'),
+            str(Path.home() / 'Downloads'),
+        ]
+        print(f'\n[SETUP] Using default monitoring paths')
 
-    print(f'\n[SETUP] Log directory: {log_dir}')
+    print(f'[SETUP] Log directory: {log_dir}')
     print(f'[SETUP] File log: {file_log.name}')
     print(f'[SETUP] App log: {app_log.name}')
 
+    # Setup LLM client
+    llm_client = None
+    if LLMClient:
+        try:
+            llm_log = log_dir / 'llm_analysis.log'
+            llm_client = LLMClient(
+                base_url="http://127.0.0.1:1234",
+                model="deepseek/deepseek-r1-0528-qwen3-8b",
+                log_file=llm_log,
+            )
+            print(f'[SETUP] LLM analysis enabled')
+        except Exception as e:
+            print(f'[SETUP] LLM not available: {e}')
+
     # Setup file monitoring (Watchdog)
     print(f'\n[FILE MONITOR] Setting up Watchdog...')
-    file_monitor = FileMonitor(file_log)
+    file_monitor = FileMonitor(file_log, llm_client=llm_client)
     observer = Observer()
 
     for watch_path in watch_paths:
@@ -247,7 +320,7 @@ def main():
 
     # Setup app monitoring (AppKit)
     print(f'\n[APP MONITOR] Setting up AppKit...')
-    app_monitor = AppMonitor(app_log, check_interval=2.0)
+    app_monitor = AppMonitor(app_log, check_interval=2.0, llm_client=llm_client)
     print('[APP MONITOR] ✓ Started')
 
     print('\n' + '=' * 80)
@@ -267,6 +340,8 @@ def main():
         observer.join()
         file_monitor.close()
         app_monitor.close()
+        if llm_client:
+            llm_client.close()
         print('[SHUTDOWN] ✓ Shutdown complete\n')
 
 
