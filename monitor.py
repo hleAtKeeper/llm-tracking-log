@@ -4,11 +4,14 @@ Unified monitoring system using Watchdog (files) and AppKit (apps).
 """
 
 import sys
+import os
 import json
 import time
+import platform
+import requests
 from datetime import datetime
 from pathlib import Path
-from typing import List
+from typing import List, Dict, Tuple
 
 # Watchdog for file monitoring
 try:
@@ -219,6 +222,197 @@ class AppMonitor:
         self.log_handle.close()
 
 
+def validate_requirements(watch_paths: List[str] = None) -> Dict[str, bool]:
+    """
+    Validate all requirements before starting monitor.
+
+    Returns:
+        Dict with validation results for each component
+    """
+    print('\n' + '='*80)
+    print('🔍 VALIDATING REQUIREMENTS')
+    print('='*80 + '\n')
+
+    results = {}
+
+    # 1. Check Platform (macOS required for AppKit)
+    print('📱 Platform Check...')
+    is_macos = platform.system() == 'Darwin'
+    if is_macos:
+        print('   ✅ macOS detected')
+        results['platform'] = True
+    else:
+        print('   ⚠️  Warning: Not running on macOS - app monitoring may not work')
+        results['platform'] = False
+    print()
+
+    # 2. Check Python Packages
+    print('📦 Python Packages...')
+    packages = {
+        'watchdog': 'File monitoring',
+        'AppKit': 'Application monitoring (macOS)',
+        'requests': 'HTTP requests',
+        'transformers': 'HuggingFace models',
+        'torch': 'PyTorch for models'
+    }
+
+    all_packages_ok = True
+    for package, description in packages.items():
+        try:
+            __import__(package)
+            print(f'   ✅ {package:15s} - {description}')
+            results[f'package_{package}'] = True
+        except ImportError:
+            print(f'   ❌ {package:15s} - Missing! ({description})')
+            all_packages_ok = False
+            results[f'package_{package}'] = False
+
+    if all_packages_ok:
+        print('   All required packages installed')
+    else:
+        print('   ⚠️  Some packages missing - install with: pip install -e .')
+    print()
+
+    # 3. Check LLM Server
+    print('🤖 LLM Server Check...')
+    llm_url = 'http://127.0.0.1:1234'
+    try:
+        response = requests.get(f'{llm_url}/v1/models', timeout=5)
+        if response.status_code == 200:
+            models = response.json()
+            print(f'   ✅ LLM server running at {llm_url}')
+            if 'data' in models and len(models['data']) > 0:
+                print(f'   📋 Available models: {len(models["data"])}')
+                for model in models['data'][:3]:  # Show first 3
+                    print(f'      - {model.get("id", "unknown")}')
+            results['llm_server'] = True
+        else:
+            print(f'   ❌ LLM server returned status {response.status_code}')
+            results['llm_server'] = False
+    except requests.exceptions.ConnectionError:
+        print(f'   ❌ Cannot connect to LLM server at {llm_url}')
+        print('      Start your LLM server first!')
+        results['llm_server'] = False
+    except Exception as e:
+        print(f'   ❌ LLM server check failed: {e}')
+        results['llm_server'] = False
+    print()
+
+    # 4. Check Risk Classifier Model
+    print('🔴 Risk Classifier Check...')
+    try:
+        from transformers import AutoTokenizer, AutoModelForSequenceClassification
+        model_name = 'keeper-security/risk-classifier-v2'
+
+        # Try to load tokenizer (fast check)
+        tokenizer = AutoTokenizer.from_pretrained(model_name)
+        print(f'   ✅ Risk classifier model available')
+        print(f'      Model: {model_name}')
+        results['risk_classifier'] = True
+    except Exception as e:
+        print(f'   ❌ Risk classifier not available: {e}')
+        print('      Model will be downloaded on first use')
+        results['risk_classifier'] = False
+    print()
+
+    # 5. Check Log Directory
+    print('📝 Log Directory Check...')
+    log_dir = Path.home() / '.llm-tracking-log' / 'logs'
+    try:
+        log_dir.mkdir(parents=True, exist_ok=True)
+        test_file = log_dir / '.test_write'
+        test_file.write_text('test')
+        test_file.unlink()
+        print(f'   ✅ Log directory writable: {log_dir}')
+        results['log_directory'] = True
+    except Exception as e:
+        print(f'   ❌ Cannot write to log directory: {e}')
+        results['log_directory'] = False
+    print()
+
+    # 6. Check Monitored Paths
+    if watch_paths:
+        print('📁 Monitored Paths Check...')
+        all_paths_ok = True
+        for path_str in watch_paths:
+            path = Path(path_str)
+            if path.exists() and path.is_dir():
+                if os.access(path, os.R_OK):
+                    print(f'   ✅ {path}')
+                    results[f'path_{path_str}'] = True
+                else:
+                    print(f'   ⚠️  {path} - Not readable!')
+                    all_paths_ok = False
+                    results[f'path_{path_str}'] = False
+            else:
+                print(f'   ❌ {path} - Does not exist or not a directory!')
+                all_paths_ok = False
+                results[f'path_{path_str}'] = False
+
+        if not all_paths_ok:
+            print('   ⚠️  Some paths have issues')
+        print()
+
+    # Summary
+    print('='*80)
+    print('📊 VALIDATION SUMMARY')
+    print('='*80 + '\n')
+
+    critical_checks = {
+        'Platform': results.get('platform', False),
+        'Log Directory': results.get('log_directory', False),
+    }
+
+    feature_checks = {
+        'LLM Server': results.get('llm_server', False),
+        'Risk Classifier': results.get('risk_classifier', False),
+    }
+
+    print('Critical Components:')
+    for name, status in critical_checks.items():
+        icon = '✅' if status else '❌'
+        print(f'   {icon} {name}')
+
+    print('\nOptional Features:')
+    for name, status in feature_checks.items():
+        icon = '✅' if status else '⚠️ '
+        status_text = 'Available' if status else 'Unavailable (will run in degraded mode)'
+        print(f'   {icon} {name}: {status_text}')
+
+    # Determine what will work
+    print('\n' + '='*80)
+    print('🚀 MONITOR CAPABILITIES')
+    print('='*80 + '\n')
+
+    capabilities = []
+    if results.get('package_watchdog', False):
+        capabilities.append('✅ File monitoring')
+    else:
+        capabilities.append('❌ File monitoring (watchdog missing)')
+
+    if results.get('platform', False) and results.get('package_AppKit', False):
+        capabilities.append('✅ Application monitoring')
+    else:
+        capabilities.append('⚠️  Application monitoring (may not work)')
+
+    if results.get('llm_server', False):
+        capabilities.append('✅ LLM code analysis')
+    else:
+        capabilities.append('❌ LLM code analysis (server offline)')
+
+    if results.get('risk_classifier', False):
+        capabilities.append('✅ Security risk classification')
+    else:
+        capabilities.append('⚠️  Security risk classification (model loading...)')
+
+    for capability in capabilities:
+        print(f'   {capability}')
+
+    print('\n' + '='*80 + '\n')
+
+    return results
+
+
 def main():
     """Start monitoring system."""
     import sys
@@ -262,6 +456,19 @@ Logs stored in: ~/.llm-tracking-log/logs/
     # Expand user paths (~/...)
     if custom_paths:
         custom_paths = [str(Path(p).expanduser().resolve()) for p in custom_paths]
+
+    # Determine watch paths early for validation
+    if custom_paths:
+        watch_paths_to_validate = custom_paths
+    else:
+        watch_paths_to_validate = [
+            str(Path.home() / 'Documents'),
+            str(Path.home() / 'Desktop'),
+            str(Path.home() / 'Downloads'),
+        ]
+
+    # Validate all requirements before starting
+    validation_results = validate_requirements(watch_paths_to_validate)
 
     print('=' * 80)
     print('UNIFIED MONITORING SYSTEM')

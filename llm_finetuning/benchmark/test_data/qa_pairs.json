@@ -1,0 +1,22 @@
+[
+  {
+    "question": "What is Python?",
+    "answer": "Python is a high-level programming language known for its simplicity and readability."
+  },
+  {
+    "question": "Explain what a neural network is.",
+    "answer": "A neural network is a computational model inspired by biological neurons that learns patterns from data."
+  },
+  {
+    "question": "What is the difference between supervised and unsupervised learning?",
+    "answer": "Supervised learning uses labeled data while unsupervised learning finds patterns in unlabeled data."
+  },
+  {
+    "question": "How does gradient descent work?",
+    "answer": "Gradient descent iteratively adjusts model parameters in the direction that minimizes the loss function."
+  },
+  {
+    "question": "What is overfitting in machine learning?",
+    "answer": "Overfitting occurs when a model learns the training data too well, including noise, and performs poorly on new data."
+  }
+]

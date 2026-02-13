@@ -1,0 +1,36 @@
+# Large model files
+models/*.pt
+models/*.pth
+models/*.bin
+models/*.safetensors
+models/*.ckpt
+
+# Checkpoints
+checkpoints/
+
+# Data files
+data/*.jpg
+data/*.png
+data/*.jpeg
+data/*.mp4
+data/*.avi
+data/*.zip
+data/*.tar.gz
+
+# Training logs
+*.log
+wandb/
+runs/
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+
+# Jupyter
+.ipynb_checkpoints/
+*.ipynb
+
+# Cache
+.cache/
